@@ -6,27 +6,25 @@ class RRSetPayload(TypedDict, total=False):
     rrset_values: List[str]
     rrset_ttl: int
 
-CACHE_KEY_IPV4 = "/run/ipv4.last"
-CACHE_KEY_IPV6 = "/run/ipv6.last"
+def _cache_path(filename: str) -> str:
+    """Return a writable path for a cache file, falling back to the system temp dir."""
+    preferred = os.path.join("/run", filename)
+    try:
+        os.makedirs("/run", exist_ok=True)
+        # Check we can actually write there
+        if os.access("/run", os.W_OK):
+            return preferred
+    except OSError:
+        pass
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), filename)
+
+CACHE_KEY_IPV4 = _cache_path("ipv4.last")
+CACHE_KEY_IPV6 = _cache_path("ipv6.last")
 
 def _get_env_var(
     name: str, default: Optional[str] = None, required: bool = False
 ) -> Optional[str]:
-    """Get the value of an environment variable with optional default and required validation.
-
-    Args:
-        name: The name of the environment variable to retrieve.
-        default: The default value to return if the environment variable is not set.
-                 Defaults to None.
-        required: Whether the environment variable is required. If True and the
-                  environment variable is not set, raises ValueError. Defaults to False.
-
-    Returns:
-        The value of the environment variable as a string, or the default value.
-
-    Raises:
-        ValueError: If the environment variable is not set and required is True.
-    """
     try:
         return os.environ[name]
     except KeyError:
@@ -37,14 +35,6 @@ def _get_env_var(
         return default
 
 def _get_cache_value(key: str) -> Optional[str]:
-    """Retrieve a cached value from the filesystem.
-
-    Args:
-        key: The cache key (file path) to read from.
-
-    Returns:
-        The cached value as a string, or None if the cache file doesn't exist.
-    """
     try:
         with open(key) as f:
             return f.read().strip()
@@ -52,41 +42,18 @@ def _get_cache_value(key: str) -> Optional[str]:
         return None
 
 def _set_cache_value(key: str, value: str) -> str:
-    """Store a value in the filesystem cache.
-
-    Args:
-        key: The cache key (file path) to write to.
-        value: The value to store in the cache.
-
-    Returns:
-        The value that was stored.
-    """
     with open(key, "w") as f:
         f.write(value)
     return value
 
 def _get_headers() -> Dict[str, str]:
-    """Build HTTP headers for Gandi API requests.
-
-    Returns:
-        A dictionary containing the required HTTP headers for API requests.
-    """
     headers = {
         "Content-Type": "application/json",
+        "Authorization": f"Bearer {GANDI_PAT}",
     }
-    headers["Authorization"] = f"Bearer {GANDI_PAT}"
+    return headers
 
 def get_ipv4() -> Tuple[Optional[str], bool]:
-    """Get the current public IPv4 address and check if it has changed.
-
-    Fetches the current public IPv4 address from an external service and compares
-    it with the cached value to determine if it has changed.
-
-    Returns:
-        A tuple containing:
-            - address (str): The current IPv4 address, or None if unavailable.
-            - changed (bool): True if the IPv4 address has changed since last check.
-    """
     try:
         response = requests.get("https://ipv4.icanhazip.com/")
         response.raise_for_status()
@@ -101,16 +68,6 @@ def get_ipv4() -> Tuple[Optional[str], bool]:
     return (address, changed)
 
 def get_ipv6() -> Tuple[Optional[str], bool]:
-    """Get the current public IPv6 address and check if it has changed.
-
-    Fetches the current public IPv6 address from an external service and compares
-    it with the cached value to determine if it has changed.
-
-    Returns:
-        A tuple containing:
-            - address (str): The current IPv6 address, or None if unavailable.
-            - changed (bool): True if the IPv6 address has changed since last check.
-    """
     try:
         response = requests.get("https://ipv6.icanhazip.com/")
         response.raise_for_status()
@@ -125,12 +82,6 @@ def get_ipv6() -> Tuple[Optional[str], bool]:
     return (address, changed)
 
 def update_a_record() -> None:
-    """Update the DNS A record if the public IPv4 address has changed.
-
-    Checks the current public IPv4 address and updates the corresponding A record
-    in Gandi's DNS service if a change is detected. Prints status messages to
-    indicate the result of the operation.
-    """
     ip, changed = get_ipv4()
     if not ip:
         print("Unable to fetch current IPV4 address")
@@ -153,12 +104,6 @@ def update_a_record() -> None:
         print(f"No change in external IP ({ip}), not updating A record")
 
 def update_aaaa_record() -> None:
-    """Update the DNS AAAA record if the public IPv6 address has changed.
-
-    Checks the current public IPv6 address and updates the corresponding AAAA record
-    in Gandi's DNS service if a change is detected. Prints status messages to
-    indicate the result of the operation.
-    """
     ip, changed = get_ipv6()
     if not ip:
         print("Unable to fetch current IPV6 address")
@@ -178,7 +123,7 @@ def update_aaaa_record() -> None:
         else:
             print(f"Set IP to {ip} for AAAA record '{GANDI_RECORD}' for {GANDI_DOMAIN}")
     else:
-        print("No change in external IP ({ip}), not updating AAAA record")
+        print(f"No change in external IP ({ip}), not updating AAAA record")
 
 if __name__ == "__main__":
     GANDI_URL = _get_env_var("GANDI_URL", "https://api.gandi.net/v5/livedns/domains/")
