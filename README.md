@@ -13,7 +13,7 @@ docker run --name gandi-ddns \
            --rm \
            -e GANDI_PAT="12343123abcd" \
            -e GANDI_DOMAIN="mydomain.net" \
-           areg97/gandi-ddns:1.0
+           ghcr.io/tonio6797/docker-gandi-ddns:latest
 ```
 
 ## Configuration
