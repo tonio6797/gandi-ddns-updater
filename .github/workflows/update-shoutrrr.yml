@@ -1,0 +1,53 @@
+name: Update Shoutrrr
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday at 8am
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get latest Shoutrrr version
+        id: latest
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/containrrr/shoutrrr/releases/latest \
+            | jq -r '.tag_name' | sed 's/^v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get current Shoutrrr version
+        id: current
+        run: |
+          VERSION=$(grep 'ARG SHOUTRRR_VERSION=' Dockerfile | cut -d= -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update Dockerfile
+        if: steps.latest.outputs.version != steps.current.outputs.version
+        run: |
+          sed -i "s/ARG SHOUTRRR_VERSION=.*/ARG SHOUTRRR_VERSION=${{ steps.latest.outputs.version }}/" Dockerfile
+
+      - name: Create Pull Request
+        if: steps.latest.outputs.version != steps.current.outputs.version
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump Shoutrrr from v${{ steps.current.outputs.version }} to v${{ steps.latest.outputs.version }}"
+          title: "chore: bump Shoutrrr from v${{ steps.current.outputs.version }} to v${{ steps.latest.outputs.version }}"
+          body: |
+            Bumps [Shoutrrr](https://github.com/containrrr/shoutrrr) from `v${{ steps.current.outputs.version }}` to `v${{ steps.latest.outputs.version }}`.
+
+            [Release notes](https://github.com/containrrr/shoutrrr/releases/tag/v${{ steps.latest.outputs.version }})
+          branch: "chore/bump-shoutrrr-${{ steps.latest.outputs.version }}"
+          labels: dependencies
